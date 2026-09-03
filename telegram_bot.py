@@ -310,7 +310,27 @@ def brain(text):
         if on is None: return f"I couldn't check PC status, sir: {d.get('error')}"
         if on: return f"Yes, your PC is ON, sir — last heartbeat {int(age)}s ago ({d.get('last_seen_str')}). {d.get('details','')}"
         return f"Your PC is OFF, sir — last seen {int(age)}s ago at {d.get('last_seen_str','unknown')}."
-    # Where my data / database is stored
+    # ── All questions go to the model (1.3 with MCP-aware prompt) ──
+    # Actions above already ran; pure Q&A is answered by the model, not canned text.
+    _MCP_CAPS = ("You have full PC control via your local executor (71 MCP tools): open apps/files/sites, "
+        "screenshots + screen vision, browser with 8 Chrome profiles (Default=haywhyeditz TikTok), "
+        "YouTube/TikTok automation, volume, notes/memory, reminders. "
+        "Data lives in Firebase project jarvisai-994bd (jarvis_memory, jarvis_notes, jarvis_reminders, jarvis_status/pc).")
+    try:
+        payload={"model": MODEL, "input": [{"role":"user","content": text}], "instructions": "You are J.A.R.V.I.S., witty loyal assistant. Under 2 sentences. " + _MCP_CAPS}
+        headers={"Authorization": f"Bearer {KEY}", "Content-Type":"application/json"}
+        r=requests.post(ZEN_URL, json=payload, headers=headers, timeout=45)
+        data=r.json()
+        out=[]
+        for item in data.get("output") or []:
+            if item.get("type")=="message":
+                for c in item.get("content") or []:
+                    if c.get("type")=="output_text": out.append(c.get("text",""))
+        ans="".join(out).strip()
+        if ans: return ans
+    except Exception as e:
+        print("model err", e)
+    # ── Offline fallback only (model failed) ──
     if any(k in low for k in ["where is your database", "where is your memory", "where do you store",
                               "your database name", "what is your database", "where do you keep",
                               "where is your data", "where do you save", "database name"]):
@@ -318,28 +338,16 @@ def brain(text):
                 "Memory & conversation history: \"jarvis_memory\", notes: \"jarvis_notes\", "
                 "reminders: \"jarvis_reminders\", and your PC status: \"jarvis_status/pc\". "
                 "It's cloud-hosted, so I can recall it even when this PC is off.")
-
     if "where" in low and "conversation" in low and ("save" in low or "store" in low):
-        on, d, age = _pc_status()
-        loc = d.get("conversation_saved","Firebase jarvis_memory + local history") if d else "Firebase jarvis_memory"
-        return f"Conversations are saved in {loc}, sir. PC is {'ON' if on else 'OFF'}."
+        return "Conversations are saved in Firebase jarvis_memory, sir."
     if "collect" in low and "details" in low and "pc" in low:
         on, d, age = _pc_status()
         if on: return f"Collected from your PC (ON): {d.get('details','')} — heartbeat {int(age)}s ago, sir."
         return "Your PC is OFF, sir — I can't collect fresh details until it's on. Last details: " + d.get("details","none")
-    if "what time" in low or "time is it" in low:
+    if "what time" in low or "time is it" in low or "whatisthetime" in low.replace(" ",""):
         return f"It is {time.strftime('%I:%M %p on %A, %B %d, %Y').lstrip('0')}, sir."
     if "hello" in low and len(low)<20: return "At your service, sir. What do you need?"
-    payload={"model": MODEL, "input": [{"role":"user","content": text}], "instructions": "You are J.A.R.V.I.S., witty loyal assistant. Under 2 sentences."}
-    headers={"Authorization": f"Bearer {KEY}", "Content-Type":"application/json"}
-    r=requests.post(ZEN_URL, json=payload, headers=headers, timeout=45)
-    data=r.json()
-    out=[]
-    for item in data.get("output") or []:
-        if item.get("type")=="message":
-            for c in item.get("content") or []:
-                if c.get("type")=="output_text": out.append(c.get("text",""))
-    return "".join(out).strip() or "(no reply)"
+    return "(no reply)"
 
 def main():
     global _last_chat_id
