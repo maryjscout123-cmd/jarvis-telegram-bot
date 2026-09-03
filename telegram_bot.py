@@ -129,6 +129,25 @@ def brain(text):
     pcb = _try_pc_bridge(text)
     if pcb:
         return pcb
+    # Task requires the PC but we're on the cloud — check if PC is reachable
+    low = text.lower()
+    needs_pc = any(k in low for k in [
+        "downloads folder", "desktop folder", "documents folder", "what's in my",
+        "what is in my", "list my files", "my files", "open my", "open the",
+        "screenshot", "play video", "play music", "stop music", "volume",
+        "search youtube", "open app", "open application", "create a file",
+        "what is on my screen", "control my pc", "close the", "start the",
+        "run program", "my pc's", "my pc ", "navigate to",
+    ])
+    if needs_pc:
+        on, d, age = _pc_status()
+        if on is True:
+            # PC on but bridge couldn't reach it / not configured
+            if not PC_BRIDGE_URL:
+                return "Your PC is ON, sir, but the cloud bridge isn't configured, so I can't reach your folders from here. Ask me on the PC itself, or set up the bridge."
+            return "Your PC is ON, sir, but I couldn't reach it for that task right now."
+        if on is False:
+            return "Your PC is OFF, sir, so I can't access your files or control apps. Turn it on (with Jarvis running) and ask again."
     if not KEY: return "Missing OPENCODE_API_KEY, sir."
     low=text.lower()
     # Reminders (Telegram bot is the JARVIS on HF — must handle them)
