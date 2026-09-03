@@ -51,7 +51,7 @@ def _health():
                     import requests as rq
                     # Test Telegram reachability from HF
                     try:
-                        r=rq.get(f"https://api.telegram.org/bot{BOT}/getMe", timeout=5)
+                        r=rq.get(f"https://api.telegram.org/bot{BOT}/getMe", timeout=20)
                         tg_ok = f"tg getMe {r.status_code}"
                     except Exception as e:
                         tg_ok = f"tg err {e}"
@@ -364,7 +364,7 @@ def main():
     while True:
         try:
             _poll_status["polls"]+=1; _poll_status["last_poll"]=time.strftime("%H:%M:%S")
-            r=requests.get(f"https://api.telegram.org/bot{BOT}/getUpdates", params={"offset": offset, "timeout": 5}, timeout=10)
+            r=requests.get(f"https://api.telegram.org/bot{BOT}/getUpdates", params={"offset": offset, "timeout": 20}, timeout=45)
             _poll_status["last_err"]=""
             data=r.json()
             for upd in data.get("result") or []:
@@ -377,7 +377,7 @@ def main():
                 _last_chat_id = cid
                 print(f"📩 {text} from {cid}")
                 reply=brain(text)
-                requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage", json={"chat_id": cid, "text": reply}, timeout=10)
+                requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage", json={"chat_id": cid, "text": reply}, timeout=30)
                 print(f"📤 {reply[:80]}")
         except Exception as e:
             _poll_status["last_err"]=str(e)[:120]
