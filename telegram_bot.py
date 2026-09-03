@@ -268,24 +268,9 @@ def brain(text):
         # _pc_status returned None/error — still try to queue
         if _enqueue_pc_command(text, _last_chat_id):
             return "I've queued that for your PC, sir — it will run when your PC comes online."
-    # Cold calling — bot only (no n8n)
+    # Cold calling is BAT-only (not Telegram)
     if "cold call" in low:
-        import re as _re
-        m = _re.search(r"cold call\s+(?:to\s+)?([+\d][\d\s\-\(\)]{7,})?(?:\s+say\s+(.+))?", low)
-        num = (m.group(1) if m and m.group(1) else "").strip()
-        msg = (m.group(2) if m and m.group(2) else "").strip().rstrip(".") if m else ""
-        if not num:
-            nm = _re.search(r"(\+?\d[\d\s\-\(\)]{8,})", text)
-            if nm: num = nm.group(1).strip()
-        if not num:
-            return "Tell me the number to cold call, sir — e.g. 'cold call +2348012345678 say hello'."
-        if not msg: msg = "Hello, this is JARVIS calling on behalf of sir."
-        try:
-            db2 = _init_firestore()
-            if db2: db2.collection("jarvis_cold_calls").add({"phone": num, "message": msg, "chat_id": str(_last_chat_id or ""), "created": time.time(), "status": "pending"})
-            return f"Cold call to {num} queued, sir — JARVIS will dial and say: '{msg}'."
-        except Exception as e:
-            return f"Cold call queue failed: {e}"
+        return "Cold calling is available on your PC BAT only, sir — open Jarvis_Local.bat and say 'cold call +234... say hello'."
 
     if not KEY: return "Missing OPENCODE_API_KEY, sir."
     low=text.lower()
