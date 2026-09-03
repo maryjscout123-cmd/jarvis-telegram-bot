@@ -344,6 +344,12 @@ def brain(text):
 def main():
     global _last_chat_id
     offset=0
+    # Ensure we are the sole poller — clear any lingering webhook/conflict
+    try:
+        requests.get(f"https://api.telegram.org/bot{BOT}/deleteWebhook?drop_pending_updates=true", timeout=10)
+        print("deleteWebhook called")
+    except Exception as e:
+        print("deleteWebhook err", e)
     import threading as _th
     _th.Thread(target=_cloud_reminder_loop, daemon=True).start()
     print(f"JARVIS Telegram poller live (model {MODEL}) - polling @AyomideJarvis_bot")
