@@ -97,16 +97,38 @@ def _pc_status():
         return None, {"error": str(e)}, 9999
     return False, {}, 9999
 
+PC_BRIDGE_URL=(os.environ.get("PC_BRIDGE_URL") or "").strip()
+ALLOWED_UID=(os.environ.get("JARVIS_TG_UID") or "").strip()
+
+def _try_pc_bridge(text):
+    """Route a PC-action request to the local bridge (works only when PC is ON)."""
+    low=text.lower()
+    trigger = any(k in low for k in [" open ", " open ", "create a file", "screenshot",
+                                     "play ", "pause", "youtube", "stop music", "close ",
+                                     "search youtube", "open app", "control", "volume"])
+    if not trigger or not PC_BRIDGE_URL:
+        return None
+    try:
+        r=requests.post(PC_BRIDGE_URL, json={"text": text}, timeout=25)
+        if r.status_code==200:
+            return (r.json() or {}).get("reply")
+    except Exception as e:
+        pass
+    return None
+
 def brain(text):
-    # Try local full brain first (when running on PC — gives MCP, Chrome profiles, screenshots, etc.)
+    # When running on the PC itself, use the full local brain (MCP, Chrome, screenshots)
     try:
         import local_brain as lb
-        # local_brain.handle already does skills + Muse Spark + MCP
         ans = lb.handle(text)
         if ans:
             return ans
     except Exception as e:
-        print(f"local_brain fallback: {e}")
+        pass
+    # On cloud/server: route PC-actions to the local bridge if the PC is on
+    pcb = _try_pc_bridge(text)
+    if pcb:
+        return pcb
     if not KEY: return "Missing OPENCODE_API_KEY, sir."
     low=text.lower()
     # Reminders (Telegram bot is the JARVIS on HF — must handle them)
@@ -177,8 +199,12 @@ def main():
                 offset=upd["update_id"]+1; _poll_status["offset"]=offset
                 msg=upd.get("message") or {}
                 chat=msg.get("chat") or {}; text=msg.get("text") or ""
+                uid=str((msg.get("from") or {}).get("id") or chat.get("id") or "")
                 cid=chat.get("id")
                 if not text or not cid: continue
+                if ALLOWED_UID and uid != ALLOWED_UID:
+                    requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage", json={"chat_id": cid, "text": "Access denied, sir."}, timeout=10)
+                    continue
                 _last_chat_id = cid
                 print(f"📩 {text} from {cid}")
                 reply=brain(text)
