@@ -166,7 +166,7 @@ def brain(text):
             import memory_cloud
             # Try to save last user message as memory; if phrase is generic, save it
             ok = memory_cloud.remember(text)
-            return "Saved to your database, sir." if ok else "I couldn't save that, sir — database offline."
+            return "Saved to your database, sir — Firebase \"jarvis_memory\" (project jarvisai-994bd)." if ok else "I couldn't save that, sir — database offline."
         except Exception as e:
             return f"Save failed: {e}"
     if "remember that" in low:
@@ -174,7 +174,7 @@ def brain(text):
             import memory_cloud
             fact = text.lower().split("remember that",1)[1].strip(" .")
             ok = memory_cloud.remember(fact)
-            return "Right away, I'll remember that, sir." if ok else "Couldn't save, sir."
+            return "Right away, I'll remember that, sir — stored in Firebase \"jarvis_memory\"." if ok else "Couldn't save, sir."
         except Exception: pass
     # PC status queries
     if "is my pc on" in low or "is pc on" in low or "pc status" in low:
@@ -182,6 +182,15 @@ def brain(text):
         if on is None: return f"I couldn't check PC status, sir: {d.get('error')}"
         if on: return f"Yes, your PC is ON, sir — last heartbeat {int(age)}s ago ({d.get('last_seen_str')}). {d.get('details','')}"
         return f"Your PC is OFF, sir — last seen {int(age)}s ago at {d.get('last_seen_str','unknown')}."
+    # Where my data / database is stored
+    if any(k in low for k in ["where is your database", "where is your memory", "where do you store",
+                              "your database name", "what is your database", "where do you keep",
+                              "where is your data", "where do you save", "database name"]):
+        return ("My data lives in Firebase, sir — project \"jarvisai-994bd\". "
+                "Memory & conversation history: \"jarvis_memory\", notes: \"jarvis_notes\", "
+                "reminders: \"jarvis_reminders\", and your PC status: \"jarvis_status/pc\". "
+                "It's cloud-hosted, so I can recall it even when this PC is off.")
+
     if "where" in low and "conversation" in low and ("save" in low or "store" in low):
         on, d, age = _pc_status()
         loc = d.get("conversation_saved","Firebase jarvis_memory + local history") if d else "Firebase jarvis_memory"
