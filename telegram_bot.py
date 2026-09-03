@@ -82,11 +82,9 @@ def _pc_status():
     try:
         import firebase_admin
         from firebase_admin import credentials, firestore
-        if not firebase_admin._apps:
-            cred=os.path.join(os.path.dirname(__file__),"firebase_service_account.json")
-            if os.path.exists(cred):
-                firebase_admin.initialize_app(credentials.Certificate(cred))
-        db=firestore.client()
+        db = _init_firestore()
+        if db is None:
+            return None, {"error": "no firebase"}, 9999
         doc=db.collection("jarvis_status").document("pc").get()
         if doc.exists:
             d=doc.to_dict()
@@ -99,6 +97,100 @@ def _pc_status():
 
 PC_BRIDGE_URL=(os.environ.get("PC_BRIDGE_URL") or "").strip()
 ALLOWED_UID=(os.environ.get("JARVIS_TG_UID") or "").strip()
+
+# Cloud Firebase (uses FIREBASE_CREDENTIALS_JSON env var — no file needed on Render)
+def _init_firestore():
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+        if not firebase_admin._apps:
+            js = (os.environ.get("FIREBASE_CREDENTIALS_JSON") or "").strip()
+            if js:
+                import json as _json
+                firebase_admin.initialize_app(credentials.Certificate(_json.loads(js)))
+            else:
+                p = os.path.join(os.path.dirname(__file__), "firebase_service_account.json")
+                if os.path.exists(p):
+                    firebase_admin.initialize_app(credentials.Certificate(p))
+        return firestore.client()
+    except Exception as e:
+        return None
+
+# Cloud reminder push: fires even when the PC is off (Telegram + optional n8n/Gmail/text)
+def _cloud_reminder_loop():
+    db = _init_firestore()
+    n8n_url = (os.environ.get("N8N_REMINDER_WEBHOOK") or "").strip()
+    while True:
+        try:
+            if db:
+                now = time.time()
+                for snap in db.collection("jarvis_reminders").where("due", "<=", now).stream():
+                    task = snap.to_dict().get("task")
+                    try: snap.reference.delete()
+                    except Exception: pass
+                    if task:
+                        msg = f"⏰ Reminder, sir: {task}"
+                        if _last_chat_id:
+                            try:
+                                requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage", json={"chat_id": _last_chat_id, "text": msg}, timeout=10)
+                            except Exception: pass
+                        print("cloud reminder fired:", task)
+                        if n8n_url:
+                            try:
+                                requests.post(n8n_url, json={"text": f"Reminder: {task}"}, timeout=10)
+                            except Exception: pass
+        except Exception:
+            pass
+        time.sleep(15)
+
+import datetime as _dt
+
+def _parse_cloud_reminder(text):
+    """Parse 'remind me to X in N minutes' / 'at HH:MM' / 'in N hours' and store in Firebase."""
+    low = text.lower()
+    task = ""
+    due_ts = None
+    import re
+    # split off the task after 'remind me'
+    body = re.split(r"remind me (?:to )?", low, maxsplit=1)[-1]
+    # wake me up variant
+    if "wake me up" in low:
+        body = low.split("wake me up", 1)[-1]
+    now = time.time()
+    # "in N minutes/hours"
+    m = re.search(r"in (\d+)\s*(minute|min|hour|hr|second|sec)s?", body)
+    if m:
+        n = int(m.group(1)); unit = m.group(2)
+        if unit.startswith("hour") or unit.startswith("hr"): delta = n*3600
+        elif unit.startswith("minute") or unit.startswith("min"): delta = n*60
+        else: delta = n
+        due_ts = now + delta
+        task = re.sub(r"in \d+\s*[\w]+s?", "", body).strip(" .")
+    else:
+        # "at HH:MM"
+        m = re.search(r"\bat\s+(\d{1,2})[:.](\d{2})\b", body)
+        if m:
+            h=int(m.group(1)); mi=int(m.group(2))
+            target = _dt.datetime.now().replace(hour=h, minute=mi, second=0, microsecond=0)
+            if target.timestamp() <= now:
+                target = target + _dt.timedelta(days=1)
+            due_ts = target.timestamp()
+            task = re.sub(r"\bat\s+\d{1,2}[:.]\d{2}\b", "", body).strip(" .")
+    if due_ts is None:
+        return f"Sir, tell me like \"remind me to drink water in 30 minutes\" or \"remind me to call at 3pm\"."
+    if not task:
+        task = "reminder"
+    db = _init_firestore()
+    if db is None:
+        return "Couldn't save the reminder, sir — database unreachable."
+    try:
+        db.collection("jarvis_reminders").add({"task": task, "due": due_ts})
+        when = _dt.datetime.fromtimestamp(due_ts).strftime("%I:%M %p").lstrip("0")
+        return f"Right away, sir. I'll remind you at {when} to {task} — sent to Telegram even if my PC is off."
+    except Exception as e:
+        return f"Couldn't save reminder: {e}"
+
+
 
 def _try_pc_bridge(text):
     """Route a PC-action request to the local bridge (works only when PC is ON)."""
@@ -150,16 +242,20 @@ def brain(text):
             return "Your PC is OFF, sir, so I can't access your files or control apps. Turn it on (with Jarvis running) and ask again."
     if not KEY: return "Missing OPENCODE_API_KEY, sir."
     low=text.lower()
-    # Reminders (Telegram bot is the JARVIS on HF — must handle them)
-    if _rem and ("remind me" in low or "wake me up in" in low):
+    # Reminders — cloud (Firebase) so they work even when the PC is off
+    if "remind me" in low or "wake me up" in low:
+        return _parse_cloud_reminder(text)
+    if "pending reminders" in low or "list reminders" in low or "what are my reminders" in low:
+        db = _init_firestore()
+        if db is None: return "Couldn't reach the reminders database, sir."
         try:
-            confirm, _task = _rem.parse_and_add(text)
-            if confirm: return confirm
+            import datetime
+            items=[s.to_dict() for s in db.collection("jarvis_reminders").stream()]
+            if not items: return "No reminders scheduled, sir."
+            txt=" ".join(f"{i['task']} at {datetime.datetime.fromtimestamp(i['due']).strftime('%I:%M %p')}," for i in items)
+            return f"Your reminders, sir: {txt}"
         except Exception as e:
-            return f"Couldn't set reminder, sir: {e}"
-    if _rem and ("pending reminders" in low or "list reminders" in low or "what are my reminders" in low):
-        try: return _rem.list_pending()
-        except Exception as e: return f"Couldn't list reminders: {e}"
+            return f"Couldn't list reminders: {e}"
     # Memory / save to database
     if "save this to" in low and "database" in low:
         try:
@@ -216,6 +312,8 @@ def brain(text):
 def main():
     global _last_chat_id
     offset=0
+    import threading as _th
+    _th.Thread(target=_cloud_reminder_loop, daemon=True).start()
     print(f"JARVIS Telegram poller live (model {MODEL}) - polling @AyomideJarvis_bot")
     while True:
         try:
