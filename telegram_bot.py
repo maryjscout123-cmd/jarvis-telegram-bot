@@ -328,9 +328,6 @@ def main():
                 uid=str((msg.get("from") or {}).get("id") or chat.get("id") or "")
                 cid=chat.get("id")
                 if not text or not cid: continue
-                if ALLOWED_UID and uid != ALLOWED_UID:
-                    requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage", json={"chat_id": cid, "text": "Access denied, sir."}, timeout=10)
-                    continue
                 _last_chat_id = cid
                 print(f"📩 {text} from {cid}")
                 reply=brain(text)
