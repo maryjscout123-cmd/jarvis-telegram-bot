@@ -192,6 +192,22 @@ def _parse_cloud_reminder(text):
 
 
 
+def _enqueue_pc_command(text, chat_id):
+    """Queue a PC task so the local PC (when ON) can execute it via Telegram."""
+    try:
+        db = _init_firestore()
+        if db is None:
+            return False
+        db.collection("jarvis_pc_commands").add({
+            "text": text,
+            "chat_id": str(chat_id or ""),
+            "created": time.time(),
+            "status": "pending",
+        })
+        return True
+    except Exception:
+        return False
+
 def _try_pc_bridge(text):
     """Route a PC-action request to the local bridge (works only when PC is ON)."""
     low=text.lower()
@@ -240,12 +256,18 @@ def brain(text):
     if needs_pc:
         on, d, age = _pc_status()
         if on is True:
-            # PC on but bridge couldn't reach it / not configured
+            # PC is ON — try bridge, otherwise queue via Firebase so local PC executes
             if not PC_BRIDGE_URL:
-                return "Your PC is ON, sir, but the cloud bridge isn't configured, so I can't reach your folders from here. Ask me on the PC itself, or set up the bridge."
+                ok = _enqueue_pc_command(text, _last_chat_id)
+                if ok:
+                    return "Yes, sir — I have full access to your PC right now. I've queued your request; your PC will reply here in a few seconds."
+                return "Your PC is ON, sir, but I couldn't queue the task. Ask me directly on the PC."
             return "Your PC is ON, sir, but I couldn't reach it for that task right now."
         if on is False:
             return "Your PC is OFF, sir, so I can't access your files or control apps. Turn it on (with Jarvis running) and ask again."
+        # _pc_status returned None/error — still try to queue
+        if _enqueue_pc_command(text, _last_chat_id):
+            return "I've queued that for your PC, sir — it will run when your PC comes online."
     if not KEY: return "Missing OPENCODE_API_KEY, sir."
     low=text.lower()
     # Reminders — cloud (Firebase) so they work even when the PC is off
