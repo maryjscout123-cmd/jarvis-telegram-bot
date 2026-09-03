@@ -69,7 +69,7 @@ _health()
 
 BOT=(os.environ.get("TELEGRAM_BOT_TOKEN") or "8825546647:AAGxv77FD5xEEk-yQOFZg7_OXBPRwAGv3gs").strip()
 ZEN_URL="https://opencode.ai/zen/v1/responses"
-MODEL=os.environ.get("OPENCODE_MODEL","muse-spark-1.2-contributor-free")
+MODEL=os.environ.get("OPENCODE_MODEL","muse-spark-1.3-contributor-free")
 KEY=(os.environ.get("OPENCODE_API_KEY") or "").strip()
 
 # Reminders support (Firebase or local fallback)
