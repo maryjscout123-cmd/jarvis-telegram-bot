@@ -223,14 +223,20 @@ def brain(text):
         return pcb
     # Task requires the PC but we're on the cloud — check if PC is reachable
     low = text.lower()
-    needs_pc = any(k in low for k in [
-        "downloads folder", "desktop folder", "documents folder", "what's in my",
-        "what is in my", "list my files", "my files", "open my", "open the",
-        "screenshot", "play video", "play music", "stop music", "volume",
-        "search youtube", "open app", "open application", "create a file",
-        "what is on my screen", "control my pc", "close the", "start the",
-        "run program", "my pc's", "my pc ", "navigate to",
-    ])
+    # robust PC-access detection (handles typos + concatenated "canuacessmypc")
+    nospace = low.replace(" ", "")
+    has_access = any(k in low for k in ["access", "acess", "acces"]) or any(k in nospace for k in ["accessmypc", "acessmypc"])
+    has_pc = "pc" in low or "mypc" in nospace
+    needs_pc = has_access and has_pc
+    if not needs_pc:
+        needs_pc = any(k in low for k in [
+            "downloads folder", "desktop folder", "documents folder", "what's in my",
+            "what is in my", "list my files", "my files", "open my", "open the",
+            "screenshot", "play video", "play music", "stop music", "volume",
+            "search youtube", "open app", "open application", "create a file",
+            "what is on my screen", "control my pc", "close the", "start the",
+            "run program", "my pc's", "my pc ", "mypc", "navigate to",
+        ])
     if needs_pc:
         on, d, age = _pc_status()
         if on is True:
